@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VCF Contact Card Maker</title>
+  <style>
+    /* Positioning only */
+    body { max-width: 480px; margin: 0 auto; padding: 16px; }
+    form label { display: block; margin-top: 12px; }
+    form input { display: block; width: 100%; box-sizing: border-box; }
+    #optional { margin-top: 12px; }
+    .actions { margin-top: 16px; display: flex; gap: 8px; }
+    #result { margin-top: 24px; }
+    #preview { white-space: pre-wrap; overflow-wrap: anywhere; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>VCF Contact Card Maker</h1>
+    <p>Fill in the fields and press <strong>Create Card</strong>.</p>
+    <p>Nothing is saved or sent anywhere. Any information in the text fields is erased upon closing the tab, refreshing, and/or pressing "clear".</p>
+  </header>
+
+  <main>
+    <form id="contact-form" autocomplete="off" novalidate>
+      <fieldset>
+        <legend>Required</legend>
+
+        <label for="first">First name
+          <input id="first" name="first" type="text" required>
+        </label>
+
+        <label for="last">Last name (or initial)
+          <input id="last" name="last" type="text" required>
+        </label>
+
+        <label for="phone">Phone number
+          <input id="phone" name="phone" type="tel" inputmode="tel" required>
+        </label>
+      </fieldset>
+
+      <details id="optional">
+        <summary>Optional (expand/collapse to view)</summary>
+        <fieldset>
+          <label for="email">Email
+            <input id="email" name="email" type="email">
+          </label>
+
+          <label for="org">Organization
+            <input id="org" name="org" type="text">
+          </label>
+        </fieldset>
+      </details>
+
+      <p id="error" role="alert" hidden></p>
+
+      <div class="actions">
+        <button type="submit">Create Card</button>
+        <button type="reset">Clear</button>
+      </div>
+    </form>
+
+    <section id="result" hidden>
+      <h2>Card ready</h2>
+      <p>File name: <code id="filename"></code></p>
+      <button type="button" id="download">Download VCF</button>
+      <details>
+        <summary>Preview card contents</summary>
+        <pre id="preview"></pre>
+      </details>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      var form = document.getElementById('contact-form');
+      var errorEl = document.getElementById('error');
+      var resultEl = document.getElementById('result');
+      var filenameEl = document.getElementById('filename');
+      var previewEl = document.getElementById('preview');
+      var downloadBtn = document.getElementById('download');
+
+      // Held in memory only until the page is closed, cleared, or the form changes.
+      var card = null;
+
+      // Escape text values per the vCard spec.
+      function esc(value) {
+        return value
+          .replace(/\\/g, '\\\\')
+          .replace(/\n/g, '\\n')
+          .replace(/,/g, '\\,')
+          .replace(/;/g, '\\;');
+      }
+
+      function showError(message) {
+        errorEl.textContent = message;
+        errorEl.hidden = false;
+      }
+
+      function clearResult() {
+        card = null;
+        resultEl.hidden = true;
+        filenameEl.textContent = '';
+        previewEl.textContent = '';
+        errorEl.hidden = true;
+        errorEl.textContent = '';
+      }
+
+      form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        clearResult();
+
+        var first = form.first.value.trim();
+        var last = form.last.value.trim();
+        var phone = form.phone.value.trim();
+        var email = form.email.value.trim();
+        var org = form.org.value.trim();
+        var digits = phone.replace(/\D/g, '');
+
+        if (!first || !last || !phone) {
+          showError('First name, last name (or initial), and phone number are required.');
+          return;
+        }
+        if (digits.length < 7) {
+          showError('Phone number must contain at least 7 digits.');
+          return;
+        }
+        if (email && !form.email.checkValidity()) {
+          showError('Email address does not look valid.');
+          return;
+        }
+
+        var lines = [
+          'BEGIN:VCARD',
+          'VERSION:3.0',
+          'N:' + esc(last) + ';' + esc(first) + ';;;',
+          'FN:' + esc(first + ' ' + last),
+          'TEL;TYPE=CELL:' + phone
+        ];
+        if (email) lines.push('EMAIL;TYPE=INTERNET:' + esc(email));
+        if (org) lines.push('ORG:' + esc(org));
+        lines.push('END:VCARD');
+
+        // e.g. Jane Smith, 555-867-5309 -> JS5309.vcf
+        var initials = (first.charAt(0) + last.charAt(0)).toUpperCase().replace(/[^A-Z0-9]/g, '');
+        var filename = (initials || 'contact') + digits.slice(-4) + '.vcf';
+
+        card = { filename: filename, text: lines.join('\r\n') + '\r\n' };
+        filenameEl.textContent = filename;
+        previewEl.textContent = card.text;
+        resultEl.hidden = false;
+      });
+
+      // Any edit or reset invalidates the processed card, hiding the download button.
+      form.addEventListener('input', clearResult);
+      form.addEventListener('reset', clearResult);
+
+      // Empty the form whenever the page is shown, so browsers can't restore typed text after a refresh or Back.
+      window.addEventListener('pageshow', function () { form.reset(); });
+
+      downloadBtn.addEventListener('click', function () {
+        if (!card) return;
+        var blob = new Blob([card.text], { type: 'text/vcard;charset=utf-8' });
+        var url = URL.createObjectURL(blob);
+        var link = document.createElement('a');
+        link.href = url;
+        link.download = card.filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 0);
+      });
+    })();
+  </script>
+</body>
+</html>
